@@ -18,10 +18,10 @@ load.pack = lapply(packages,require,char=T)
 load.pack
 
 ### ABM Parameters
-ngenerations = 10 # No generations
-replicates = 10 #No replicates
+ngenerations = 10 # No. generations
+replicates = 10 #No. replicates
 dim = 100 # dimension of square habitat array
-hab_dim = dim^2 # total no cells
+hab_dim = dim^2 # total no. cells
 nspecies = 20 # No. species
 nindiv = 20 # No. individuals per species
 tot_indiv = nspecies*nindiv # Total individuals
@@ -47,7 +47,7 @@ pb = winProgressBar(title='Generations',label='0%',min=0,max=100,initial=0,width
 loop = 0
 start_time = proc.time()
 for(reps in 1:replicates){
-  # Aggression relationships (transitive or intransitive)
+  # Aggression relationships (transitive or intransitive) [**LBE:** I don't understand why intransitive (ie. non-linear) at smaller reps?]
   if(reps<=replicates/2){
     intransitive = T 
   }else{
