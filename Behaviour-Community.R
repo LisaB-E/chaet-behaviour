@@ -8,16 +8,16 @@
 
 #' *Current model prepared by Gareth Last-name, under supervision by Dr Sally Keith.* 
 
-#' ## Workspace preparation ##
+#' ## Workspace preparation
 rm(list=ls()) #removes all objects present in the workspace
 
-# Load packages
+#' Load packages
 packages = c('reshape','gstat','ggplot2',
-             'viridis','tictoc')
+             'viridis','tictoc', 'progress')
 load.pack = lapply(packages,require,char=T)
 load.pack
 
-### ABM Parameters
+#' ## ABM Parameters
 ngenerations = 10 # No. generations
 replicates = 10 #No. replicates
 dim = 100 # dimension of square habitat array
@@ -33,21 +33,23 @@ a_rep = 0.4 # Asymptotic reproduction probability
 offspring_pen = 2 # factor by which to scale offspring energy
 diff_ag = 0.05 # Differential aggression \in [0,0.5)
 
-###Potential one time-step movement. Can move to any adjecent cell (inc diagonal)
+#' Potential one time-step movement. Can move to any adjecent cell (inc diagonal) *LBE - why not -1,0,1 for x/y coords?* 
 step_moves = c(-1,dim-1,dim,dim+1,1,-dim+1,-dim,-dim-1)
 
-### Store species richness at each generation
+#' Store species richness at each generation
 rich = data.frame(gen=rep(1:ngenerations,replicates),
                   rep=rep(1:replicates,each=ngenerations),
                   rich=NA,
                   type=NA)
-### Progress bar
-pb = winProgressBar(title='Generations',label='0%',min=0,max=100,initial=0,width=400)
+#'  Progress bar Windows
+# only runs in windows!
+# pb = winProgressBar(title='Generations',label='0%',min=0,max=100,initial=0,width=400)
 
-loop = 0
-start_time = proc.time()
-for(reps in 1:replicates){
-  # Aggression relationships (transitive or intransitive) [**LBE:** I don't understand why intransitive (ie. non-linear) at smaller reps?]
+#' Progress bar on Mac *use pb$tick() in for-loop to run*
+pb = progress_bar$new(total=100, width=100, clear=F)
+
+#' Aggression relationships (transitive or intransitive) 
+#' *LBE: I don't understand why intransitive (ie. non-linear) at smaller reps?*
   if(reps<=replicates/2){
     intransitive = T 
   }else{
