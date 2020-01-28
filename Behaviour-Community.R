@@ -7,6 +7,7 @@
 #'
 
 #' *Current model prepared by Gareth Last-name, under supervision by Dr Sally Keith.* 
+#' *[LBE] Annotations = Lisa Bostrom Einarsson*
 
 #' ## Workspace preparation
 rm(list=ls()) #removes all objects present in the workspace
@@ -49,45 +50,46 @@ rich = data.frame(gen=rep(1:ngenerations,replicates),
 pb = progress_bar$new(total=100, width=100, clear=F)
 
 #' Aggression relationships (transitive or intransitive) 
-#' *LBE: I don't understand why intransitive (ie. non-linear) at smaller reps?*
+#' *LBE: I don't understand why intransitive (ie. non-linear) at smaller reps? Also, first time rps appears here - so throws an error*
   if(reps<=replicates/2){
     intransitive = T 
   }else{
     intransitive = F
   }
   
-  # Define aggression values
+#' Define aggression values
   if(intransitive){
     aggression = matrix(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),ncol=nspecies)
-    diag(aggression) = 0.5 # For interaction between individuals of the same species
+    diag(aggression) = 0.5 # For interaction between individuals of the same species *OH, with intransitive vs transitive, does it mean intraspecific vs interspecific?*
   }else{
     aggression = matrix(ncol=nspecies,nrow=nspecies,
                         sort(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),d=T))
   }
   
-  ###Simulate spatially autocorrelated habitat
-  hab_grid = expand.grid(1:dim, 1:dim)
+#'  ## Simulate spatially autocorrelated habitat
+#'  [LBE] The variogram is defined as the variance of the difference between field values at two locations vgm()= variogram. Exponential model. The experimental variogram is calculated by averaging onehalf the difference squared of the z-values over all pairs of observations with the specified separation distance and direction. In other words *the variogram describes textural differences between datasets, in terms of spatial locations, which common descriptive statistics and histograms do not incoporate*
+  hab_grid = expand.grid(1:dim, 1:dim) #A data frame containing one row for each combination of the supplied factors. The first factors vary fastest.
   names(hab_grid) = c('x','y')
-  
+  #' [LBE] look into whether these autocorrelated datasets are likley to be represenattive of coral reefs
   hab_mod = gstat(formula=z~1,
-                  locations=~x+y,
+                  locations=~x+y, #ordinary & simple krigin
                   dummy=T,
                   beta=0,#Expected value of Gaussian field
                   model=vgm(psill=0.025,model="Exp",range=30),# Range controls autocorrelation
                   nmax=20)
   
-  hab_pred = predict(hab_mod, newdata=hab_grid, nsim=1)
+  hab_pred = predict(hab_mod, newdata=hab_grid, nsim=1) #predicts habitat value from model
   
-  #Noramalise to 0-1
+#' Normalise to 0-1
   hab_pred$sim1 = hab_pred$sim1 - min(hab_pred$sim1)
   hab_pred$sim1 = hab_pred$sim1/max(hab_pred$sim1)
   
-  #Make matrix
+#' Make matrix
   hab_vals = as.matrix(cast(hab_pred,
                             x~y,
                             value='sim1'))
   
-  ###Plot habitat values
+#' ## Plot habitat values
   hab.plot = ggplot(hab_pred) + theme_bw() +
     geom_raster(aes(x,y,fill=sim1)) +
     scale_x_continuous(expand=expand_scale(add=0)) +
@@ -103,42 +105,46 @@ pb = progress_bar$new(total=100, width=100, clear=F)
           axis.title = element_blank(),
           axis.ticks = element_blank())
   
-  ###Randomly place individuals of each species in habitat, record species ID,..
-  #aggression, and habitat value
-  locs = cbind(sample(hab_dim,tot_indiv),rep(1:nspecies,each=nindiv))
-  locs = cbind(locs,hab_vals[locs[,1]])
-  #add energetic value
-  locs = cbind(locs,rep(100,nindiv))
+  #' Randomly place individuals of each species in habitat, record species ID,..
+  #' aggression, and habitat value
+  locs = cbind(sample(hab_dim,tot_indiv),rep(1:nspecies,each=nindiv)) # Randomly picks locations (V1-cell) for all individuals (V2) 
+  locs = cbind(locs,hab_vals[locs[,1]]) #V3-habitat value
+#' add energetic value
+  locs = cbind(locs,rep(100,nindiv)) #v4 starting energetic value =100?
+  colnames(locs)=c("cell", "species", "hab_val", "energy")
   
-  ###Place individuals in habitat
-  habitat = matrix(0,ncol=dim,nrow=dim)
-  habitat[locs[,1]] = 1 
+#' Place individuals in habitat
+  habitat = matrix(0,ncol=dim,nrow=dim) #make 100 x 100 matrix
+  habitat[locs[,1]] = 1 # pulls out V1 (uniqe cell number) from locs, and places individual (=1) in the cell
   
-  ###Sort by location
+#' Sort by location
   locs = locs[order(locs[,1]),]
   
-  ###Indentify individuals on edge or at corner. These have restricted
+#' Identify individuals on edge or at corner. These have restricted
   #movement options (can only stay still or move back into system)
   edge_corner = unique(c(1:dim,
                          which(1:hab_dim%%dim%in%0:1),
                          (hab_dim-dim+1):hab_dim))
   
   
-  ###Loss energy,feed,die
-  locs[,4] = locs[,4]-eloss+locs[,3]*100;
+#' Loss energy,feed,die
+  locs[,4] = locs[,4]-eloss+locs[,3]*100; #loss of energy from one step, gain energy from habitat (feed)
   locs[locs[,4]>100,4] = 100
-  #Death occurs as Bernoulli trail with probability logistically dependent on current energy
+#' Death occurs as Bernoulli trail with probability logistically dependent on current energy
   mort = as.logical(rbinom(dim(locs)[1],1,a/(1+b*exp(-v*locs[,4]))))
-  locs = locs[mort,]
+  locs = locs[mort,] #removes individuals from `locs` picked in `mort`
   
+#' simulation start? *START here - think about breaking this up into functions instead? But do as branch in case you f it up...
+ loop=0  
   for(generation in 1:ngenerations){
     loop = loop + 1
     #Progress bar update
-    time_update = proc.time() - start_time
-    info = sprintf('Generations run: %.2f%%. Time remaining: %.1f mins',
-                   100*loop/(ngenerations*replicates),
-                   time_update[3]/(loop*60)*(ngenerations*replicates-loop))
-    setWinProgressBar(pb,100*loop/(ngenerations*replicates),label=info)
+    pb$tick()
+   # time_update = proc.time() - start_time
+   # info = sprintf('Generations run: %.2f%%. Time remaining: %.1f mins',
+   #               100*loop/(ngenerations*replicates),
+   #              time_update[3]/(loop*60)*(ngenerations*replicates-loop))
+   # setWinProgressBar(pb,100*loop/(ngenerations*replicates),label=info)
     
     ###Simulate random movement
     #Edge-corner cells occupied
