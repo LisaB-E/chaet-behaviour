@@ -1,7 +1,7 @@
 #' ---
 #' title: “From behaviour to community change "
 #' author: “Team KeithChaets"
-#' date: "April 1, 2014"
+#' date: "`r format(Sys.time(), '%d %B, %Y')`"
 #' output: github_document
 #' ---
 #'
@@ -43,7 +43,7 @@ a_rep         = 0.4   # Asymptotic reproduction probability
 offspring_pen = 2     # factor by which to scale offspring energy
 diff_ag       = 0.05  # Differential aggression \in [0,0.5)
 
-#' Potential one time-step movement. Can move to any adjecent cell (inc diagonal) *LBE - why not -1,0,1 for x/y coords?* 
+#' Potential one time-step movement. Can move to any adjecent cell (inc diagonal) 
 step_moves = c(-1,dim-1,dim,dim+1,1,-dim+1,-dim,-dim-1)
 
 #' Store species richness at each generation
@@ -64,7 +64,7 @@ pb = progress_bar$new(total=100, width=100, clear=F)
 #'
 #' ## Aggress ------------------------------------------------------------
 
-Aggression relationships (transitive or intransitive) 
+# Aggression relationships (transitive or intransitive) 
 #' *LBE: I don't understand why intransitive (ie. non-linear) at smaller reps? Also, first time rps appears here - so throws an error*
 if(reps<=replicates/2){
   intransitive = T 
