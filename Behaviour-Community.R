@@ -6,8 +6,15 @@
 #' ---
 #'
 
-#' *Current model prepared by Gareth Last-name, under supervision by Dr Sally Keith.* 
-#' *[LBE] Annotations = Lisa Bostrom Einarsson*
+#' *Current model prepared by Gareth Lennox, project led by Dr Sally Keith.* 
+#' * Excessive Annotations = Lisa Bostrom Einarsson :)
+#' 
+#' Current order:  
+#' - 0. Initiate
+#' - 1. Feed, energy gain, energy loss, die (from energy loss)
+#' - 2. Move
+#' - 3  Fight, feed, energy gain, loss, reproduce die
+#' 
 #' 
 #' =======================================================================
 #' # 1. Workspace preparation 
@@ -58,44 +65,291 @@ rich = data.frame(gen=rep(1:ngenerations,replicates),
 #' Progress bar on Mac *use pb$tick() in for-loop to run*
 pb = progress_bar$new(total=100, width=100, clear=F)
 
-#' =======================================================================
-#' #3. Functions
-#' =======================================================================
-#'
-#' ## Aggress ------------------------------------------------------------
+#' set aggression levels
+aggression = matrix(ncol=nspecies,nrow=nspecies,
+                    sort(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),d=T)) # this generates a matrix of aggresiosn lebvels, not sure why and how though... Also ties in with trans/intrans, which may have been mixed up with inter vs intra comp??
 
-# Aggression relationships (transitive or intransitive) 
-#' *LBE: I don't understand why intransitive (ie. non-linear) at smaller reps? Also, first time rps appears here - so throws an error*
-if(reps<=replicates/2){
-  intransitive = T 
-}else{
-  intransitive = F
+
+#' =======================================================================
+#' #3a. Function - Feed, energy loss, die
+#' =======================================================================
+
+die <- function(locs){
+  locs[,4] = locs[,4]-eloss+locs[,3]*100; #loss of energy from one step, gain energy from habitat (feed) #not sure I agree with this order?
+  locs[locs[,4]>100,4] = 100 #make sure does not exceed 100
+
+  # Die ---------------------------------------------------------------
+  # Death occurs as Bernoulli trail with probability logistically dependent on current energy
+  mort = as.logical(rbinom(dim(locs)[1],1,a/(1+b*exp(-v*locs[,4]))))
+  locs = locs[mort,] #removes individuals from `locs` picked in `mort`
+return(locs)
+  }
+
+locs2 <- die(locs=locs) # to run and save output
+
+#' =======================================================================
+#' #3b. Function - move
+#' =======================================================================
+
+ move <- function(locs, hab_vals){
+   step_moves  <- c(-1,dim-1,dim,dim+1,1,-dim+1,-dim,-dim-1) #moving in all dimension (incl diagonal) [LBE]what about staying put?
+   edge_corner <- unique(c(1:dim,                        # top row
+                          which(1:hab_dim%%dim%in%0:1),  # sides
+                          (hab_dim-dim+1):hab_dim))      # bottom
+   ec_occ      <- edge_corner[which(habitat[edge_corner]==1)] # which edge corner cells are occupied
+   ec_indiv    <- locs[locs[,1]%in%ec_occ,]                   # which individuals are on edge corner cells (V2&V1)
+   offec_indiv <- locs[locs[,1]%in%setdiff(locs[,1],ec_indiv[,1]),] # individuals  NOT on edge corner cells (V1&v2)
+   
+   offec_indiv <- cbind(offec_indiv, sample(step_moves, dim(offec_indiv)[1], replace = TRUE)) # add move step (V3)
+
+  #-------------------------------------------- edge and corner individuals ---------------------------------------
+  ec_indiv_new <- NULL
+    if(sum(ec_indiv[,1]==1)>0){                    # Q1 find if any inds are in top left corner
+      top_left_ind = ec_indiv[ec_indiv[,1]==1,]    # VALUE IF TRUE -pull out that data
+    if(is.null(dim(top_left_ind))){              # Q2 if top left individual does not exist
+      top_left_ind = c(top_left_ind,sample(step_moves[3:5],1)) # VALUE IF TRUE move down, right or diagonal
+    }else{                                     
+      top_left_ind = cbind(top_left_ind,sample(step_moves[3:5], # VALUE IF FALSE
+                                             dim(top_left_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,top_left_ind)
+}
+  if(sum(ec_indiv[,1] == hab_dim-dim+1)>0){   #top right
+    top_right_ind = ec_indiv[ec_indiv[,1]==hab_dim-dim+1,]
+    if(is.null(dim(top_right_ind))){
+      top_right_ind = c(top_right_ind,sample(step_moves[5:7],1))
+    }else{
+      top_right_ind = cbind(top_right_ind,sample(step_moves[5:7],
+                                               dim(top_right_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,top_right_ind)
+}
+  if(sum(ec_indiv[,1] == dim)>0){              #bottom left
+    bottom_left_ind = ec_indiv[ec_indiv[,1]==dim,]
+    if(is.null(dim(bottom_left_ind))){
+      bottom_left_ind = c(bottom_left_ind,sample(step_moves[1:3],1))
+    }else{
+      bottom_left_ind = cbind(bottom_left_ind,sample(step_moves[1:3],
+                                                   dim(bottom_left_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,bottom_left_ind)
+}
+  if(sum(ec_indiv[,1] == hab_dim)>0){           #bottom righ
+    bottom_right_ind = ec_indiv[ec_indiv[,1]==hab_dim,]
+    if(is.null(dim(bottom_right_ind))){
+      bottom_right_ind = c(bottom_right_ind,sample(step_moves[c(1,7:8)],1))
+    }else{
+    bottom_right_ind = cbind(bottom_right_ind,sample(step_moves[c(1,7:8)],
+                                                   dim(bottom_right_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,bottom_right_ind)
+}
+  if(sum(ec_indiv[,1]%in%(2:(dim-1)))>0){        #left edge
+    left_edge_ind = ec_indiv[ec_indiv[,1]%in%(2:(dim-1)),]
+    if(is.null(dim(left_edge_ind))){
+      left_edge_ind = c(left_edge_ind,sample(step_moves[1:5],1))
+    }else{
+      left_edge_ind = cbind(left_edge_ind,sample(step_moves[1:5],
+                                               dim(left_edge_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,left_edge_ind)
+}
+  if(sum(ec_indiv[,1]%in%((hab_dim-dim+2):(hab_dim-1)))>0){    #right edge
+    right_edge_ind = ec_indiv[ec_indiv[,1]%in%((hab_dim-dim+2):(hab_dim-1)),]
+    if(is.null(dim(right_edge_ind))){
+      right_edge_ind = c(right_edge_ind,sample(step_moves[c(1,5:8)],1))
+    }else{
+      right_edge_ind = cbind(right_edge_ind,sample(step_moves[c(1,5:8)],
+                                                 dim(right_edge_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,right_edge_ind)
+}
+  if(sum(ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==1),c(1,hab_dim-dim+1)))>0){ #top edge
+    top_edge_ind = ec_indiv[ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==1),
+                                                  c(1,hab_dim-dim+1)),]
+    if(is.null(dim(top_edge_ind))){
+      top_edge_ind = c(top_edge_ind,sample(step_moves[3:7],1))
+    }else{
+      top_edge_ind = cbind(top_edge_ind,sample(step_moves[3:7],
+                                             dim(top_edge_ind)[1],r=T))
+  }
+  ec_indiv_new = rbind(ec_indiv_new,top_edge_ind)
+}
+  if(sum(ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==0),c(dim,hab_dim)))>0){ #bottom edge
+    bottom_edge_ind = ec_indiv[ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==0),
+                                                     c(dim,hab_dim)),]
+    if(is.null(dim(bottom_edge_ind))){
+      bottom_edge_ind = c(bottom_edge_ind,sample(step_moves[c(1:3,7:8)],1))
+  }else{
+      bottom_edge_ind = cbind(bottom_edge_ind,sample(step_moves[c(1:3,7:8)],
+                                                   dim(bottom_edge_ind)[1],r=T))
+  }
+    ec_indiv_new = rbind(ec_indiv_new,bottom_edge_ind)
+ 
 }
 
-#' Define aggression values
-if(intransitive){
-  aggression = matrix(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),ncol=nspecies)
-  diag(aggression) = 0.5 # For interaction between individuals of the same species *OH, with intransitive vs transitive, does it mean intraspecific vs interspecific?*
-}else{
-  aggression = matrix(ncol=nspecies,nrow=nspecies,
-                      sort(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),d=T))
+   # ------------------------------------- move -------------------------------------
+  rownames(ec_indiv_new) = NULL
+   
+
+  locs_new = rbind(offec_indiv,ec_indiv_new)
+  locs_new = locs_new[order(locs_new[,1]),]
+  colnames(locs_new)[5]="move"
+
+ #Habitat value of proposed new cell
+  locs_new = cbind(locs_new,hab_vals[locs_new[,1]+locs_new[,5]])
+  colnames(locs_new)[6]="new_habVal"
+
+#Move probabilistically dependent upon the relative resource values of
+#current and possible new cells
+  movers = locs_new[locs_new[,5]!=0,]  #separate 
+  non_movers = locs_new[locs_new[,5]==0,] # currently no non moving option in model
+
+move_vals = cbind(movers[,3],movers[,6]) #V1 old hab val, V2 new hab_val
+rel_move_val = move_vals/rowSums(move_vals) #prop of both??
+movers[runif(dim(movers)[1])<=rel_move_val[,1],5] = 0 #introduce non-movers in LQ hab?
+
+locs_new = rbind(movers,non_movers)
+locs_new = locs_new[order(locs_new[,1]),]
+
+#Move
+locs_new[,1] = locs_new[,1] + locs_new[,5] #add move to cell value
+locs_new[,3] = hab_vals[locs_new[,1]]      #get hab vals for new cells
+locs_new = locs_new[order(locs_new[,1]),]  
+
+return(locs_new) #i feel like this should eb now merged with `locs`?
+ }
+ 
+ locs_new <- move(locs=locs, hab_vals=hab_vals)
+
+ #' =======================================================================
+ #' #3c. Function - fight
+ #' =======================================================================
+ 
+ fight <- function(locs, hab_vals){
+  
+    #Interacting species are those occupying the same cell -----------------
+   
+   loc_ind <- locs_new[,1]                                            # extracts cell locations
+   int_loc <- loc_ind[duplicated(loc_ind)]                            # extracts duplicated values from new locations
+   fighters <- locs_new[locs_new[,1]%in%int_loc,]                     # extracts values for fighters from locs_new
+   
+   fighters[,4] = fighters[,4]-fight_eloss                            # Aggression is energetically expensive
+   locs_new = locs_new[locs_new[,1]%in%setdiff(locs_new[,1],fighters[,1]),]  # Remove fighters from set of individuals 
+  
+    #Roulette selection for winners ----------------------------------------
+ all_winners = NULL
+ 
+ for(i in unique(fighters[,1])){
+   sp_in_cell = fighters[fighters[,1]==i,]                             # extracts info about only fighting species
+   sp_ids = sp_in_cell[,2]                                             # extracts species number
+   nosp = length(sp_ids)                                               
+   win_vect = rep(0,nosp)                                              # creates vector for the number of fighting species 
+   
+   #Fights occur in random pairs -------------------------------------------
+   #Losers removed until one individual remains 
+   for(j in 1:(nosp-1)){
+     fightj = sp_in_cell[sample(1:dim(sp_in_cell)[1],2),]              # extracts out rows of two random individs in same cell
+     
+     aggress_vals = c(aggression[fightj[1,2],fightj[2,2]],             # extracts out aggression level based on species number
+                      aggression[fightj[2,2],fightj[1,2]])             # depending on which is x,y location in aggresion matrix? don't understand this matrix...
+     
+     energy_levels = c(fightj[1,4],fightj[2,4])                        # extracts energy levels of both fighters
+     
+     status = aggress_vals*energy_levels                               # Status of individual is product of aggression and energy level. 
+                                                                       # Highly aggressive but lower energy individuals can lose to less aggressive...
+                                                                       # individuals who have high energy
+     
+     out_prob = cumsum(status^exp_fight)/sum(status^exp_fight)         # cumulative sum - not sure what's going on here. Because cumsum, last umber is always coing to be equal to 
+                                                                       # sum, so =1 ??
+     
+     if(out_prob[1]>runif(1)){                                         # roulette? runif() determines win vs lose?
+       loser = fightj[2,]
+     }else{
+       loser = fightj[1,]
+     }
+     
+     rowcount = 0
+     rowsum = 0
+     while(rowsum!=6){                                                 # Don't know where 6 comes from?
+       rowcount = rowcount + 1
+       rowsum = sum(sp_in_cell[rowcount,] == loser)                    # identifies individ randomly allocated as loser
+     }
+     sp_in_cell = sp_in_cell[-rowcount,]                               # removes loser, then loops back for next fight
+   }
+   
+   initial = fighters[fighters[,1]==i,]                                # identifies next cell with multiple individs, extracts only their info 
+   
+   rowcount = 0
+   rowsum = 0
+   while(rowsum!=6){                                                   # not sure...
+     rowcount = rowcount + 1
+     rowsum = sum(initial[rowcount,] == sp_in_cell)
+   }
+   win_vect[rowcount] = 1                                              # changes 0 to 1 in win vs lose column
+   all_winners = c(all_winners,win_vect)
+ }
+   fighters = cbind(fighters,all_winners)                              # merges 
+ 
+   #Lose energy, feed, die ----------------------------------------
+
+ winners = fighters[fighters[,7]==1,]                                  # Differentiate winners and losers 
+ losers = fighters[fighters[,7]==0,]
+ 
+ ### Loss energy, consume, die
+ #Losers only loss energy and die
+ losers[,4] = losers[,4]-eloss                                         # subtracts `eloss` from e_level 
+ losers = losers[losers[,4]>0,]                                        # deletes dead individuals (energy =0)
+ mort = as.logical(rbinom(dim(losers)[1],1,a/(1+b*exp(-v*losers[,4])))) # randomly selects some of remianing indivuals to die
+ losers = losers[mort,]                                                # deletes those individs
+ 
+ # Combines winner with those who didn't engage in aggression (i.e. were sole occupants of cell)
+ locs_new = cbind(locs_new,all_winners=1)
+ locs_new = rbind(locs_new,winners)
+ locs_new = locs_new[order(locs_new[,1]),]
+ 
+ #These individuals lose energy, consume, die and reproduce
+ locs_new[,4] = locs_new[,4]-eloss+locs_new[,3]*100                     # current energy= before energy - energy loss (~aging?) + energy gain (feeding)
+ locs_new[locs_new[,4]>100,4] = 100                                     # reset energy above 100 to 100
+ locs_new = locs_new[locs_new[,4]>0,]                                   # deletes individs with energy 0
+ mort = as.logical(rbinom(dim(locs_new)[1],1,a/(1+b*exp(-v*locs_new[,4])))) # randomly selects some of remaining indivuals to die
+ locs_new = locs_new[mort,]
+ 
+ #Low-energy individuals (I sound like Trump!) are unlikely to reproduce.
+ locs_new = cbind(locs_new,rbinom(dim(locs_new)[1],1,a_rep/(1+b*exp(-v*locs_new[,4])))) # Reproduction is Bernouilli trial dependent on current energy levels. 
+ offspring = locs_new[locs_new[,8]==1,]                                 # extracts offspring details (same as parent)
+ offspring[,4] = offspring[,4]/offspring_pen                            # Set offspring energy to 50% of parents to account for lower chance of survival
+ 
+ locs = rbind(locs_new[,1:4],offspring[,1:4],losers[,1:4])              # merges output with new locs
+ locs = locs[order(locs[,1]),]
+ 
+ habitat = matrix(0,ncol=dim,nrow=dim)                                  # creates new habitat matrix
+ habitat[locs[,1]] = 1                                                  # with individuals based on locations in `locs`
+
 }
+ 
+ 
+#' =======================================================================
+#' #4 Simulate
+#' =======================================================================
+#' 
+#' 
+#' 
+#' ## 0. Initiate habitat and individuals --------------------------------
 
-#' ## Create habitat --------------------------------------------------------
+ # Simulate spatially autocorrelated habitat 
 
-## Simulate spatially autocorrelated habitat
-#'  [LBE] The variogram is defined as the variance of the difference between field values at two locations vgm()= variogram. Exponential model. The experimental variogram is calculated by averaging onehalf the difference squared of the z-values over all pairs of observations with the specified separation distance and direction. In other words *the variogram describes textural differences between datasets, in terms of spatial locations, which common descriptive statistics and histograms do not incoporate*
-hab_grid = expand.grid(1:dim, 1:dim) #A data frame containing one row for each combination of the supplied factors. The first factors vary fastest.
+hab_grid = expand.grid(1:dim, 1:dim)                                     # A data frame containing one row for each combination of the supplied factors. The first factor vary fastest.
 names(hab_grid) = c('x','y')
-#' [LBE] look into whether these autocorrelated datasets are likley to be represenattive of coral reefs
-hab_mod = gstat(formula=z~1,
-                locations=~x+y, #ordinary & simple krigin
-                dummy=T,
-                beta=0,#Expected value of Gaussian field
-                model=vgm(psill=0.025,model="Exp",range=30),# Range controls autocorrelation
-                nmax=20)
+                                                                         # Generates objects that hold all the information necessary for univariate or multivariate geostatistical prediction
+hab_mod = gstat(formula=z~1,                                             # Ordinary & simple krigin 
+                locations=~x+y,                                          
+                dummy=T,                                                 # if TRUE, consider this data as a dummy variable (only necessary for unconditional simulation)
+                beta=0,                                                  # Expected value of Gaussian field
+                model=vgm(psill=0.025,model="Exp",range=30),             # Range controls autocorrelation
+                nmax=20)                                                 # the number of nearest observations that should be used for a kriging prediction or simulation  
 
-hab_pred = predict(hab_mod, newdata=hab_grid, nsim=1) #predicts habitat value from model
+hab_pred = predict(hab_mod, newdata=hab_grid, nsim=1)                    # predicts habitat value from model
 
 #' Normalise to 0-1
 hab_pred$sim1 = hab_pred$sim1 - min(hab_pred$sim1)
@@ -122,168 +376,39 @@ hab.plot = ggplot(hab_pred) + theme_bw() +
         axis.title = element_blank(),
         axis.ticks = element_blank())
 #' 
-#' ## Move --------------------------------------------------------------
-#'
-# delete me 
-locs <- cbind(sample(hab_dim,tot_indiv),rep(1:nspecies,each=nindiv)) # Generate random starting positions for first run (or only to test code?)
-habitat = matrix(0,ncol=dim,nrow=dim)
-habitat[locs[,1]] = 1 
-# delete me
-
- move <- function(locs, habitat){
-   step_moves  <- c(-1,dim-1,dim,dim+1,1,-dim+1,-dim,-dim-1) #moving in all dimension (incl diagonal) [LBE]what about staying put?
-   edge_corner <- unique(c(1:dim,                        # top row
-                          which(1:hab_dim%%dim%in%0:1),  # sides
-                          (hab_dim-dim+1):hab_dim))      # bottom
-   ec_occ      <- edge_corner[which(habitat[edge_corner]==1)] # which edge corner cells are occupied
-   ec_indiv    <- locs[locs[,1]%in%ec_occ,]                   # which individuals are on edge corner cells (V2&V1)
-   offec_indiv <- locs[locs[,1]%in%setdiff(locs[,1],ec_indiv[,1]),] # individuals  NOT on edge corner cells (V1&v2)
-   
-   offec_indiv <- cbind(offec_indiv, sample(step_moves, dim(offec_indiv)[1], replace = TRUE)) # add move step (V3)
-
-#Identify which edges or corners individuals on edges or corners are at...
-#and define proposed moves
-ec_indiv_new = NULL;
-if(sum(ec_indiv[,1]==1)>0){                    #find if any inds are in top left corner
-  top_left_ind = ec_indiv[ec_indiv[,1]==1,]    # if yes, 
-  if(is.null(dim(top_left_ind))){
-    top_left_ind = c(top_left_ind,sample(step_moves[3:5],1))
-  }else{
-    top_left_ind = cbind(top_left_ind,sample(step_moves[3:5],
-                                             dim(top_left_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,top_left_ind)
-}
-if(sum(ec_indiv[,1] == hab_dim-dim+1)>0){
-  top_right_ind = ec_indiv[ec_indiv[,1]==hab_dim-dim+1,]
-  if(is.null(dim(top_right_ind))){
-    top_right_ind = c(top_right_ind,sample(step_moves[5:7],1))
-  }else{
-    top_right_ind = cbind(top_right_ind,sample(step_moves[5:7],
-                                               dim(top_right_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,top_right_ind)
-}
-if(sum(ec_indiv[,1] == dim)>0){
-  bottom_left_ind = ec_indiv[ec_indiv[,1]==dim,]
-  if(is.null(dim(bottom_left_ind))){
-    bottom_left_ind = c(bottom_left_ind,sample(step_moves[1:3],1))
-  }else{
-    bottom_left_ind = cbind(bottom_left_ind,sample(step_moves[1:3],
-                                                   dim(bottom_left_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,bottom_left_ind)
-}
-if(sum(ec_indiv[,1] == hab_dim)>0){
-  bottom_right_ind = ec_indiv[ec_indiv[,1]==hab_dim,]
-  if(is.null(dim(bottom_right_ind))){
-    bottom_right_ind = c(bottom_right_ind,sample(step_moves[c(1,7:8)],1))
-  }else{
-    bottom_right_ind = cbind(bottom_right_ind,sample(step_moves[c(1,7:8)],
-                                                     dim(bottom_right_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,bottom_right_ind)
-}
-if(sum(ec_indiv[,1]%in%(2:(dim-1)))>0){
-  left_edge_ind = ec_indiv[ec_indiv[,1]%in%(2:(dim-1)),]
-  if(is.null(dim(left_edge_ind))){
-    left_edge_ind = c(left_edge_ind,sample(step_moves[1:5],1))
-  }else{
-    left_edge_ind = cbind(left_edge_ind,sample(step_moves[1:5],
-                                               dim(left_edge_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,left_edge_ind)
-}
-if(sum(ec_indiv[,1]%in%((hab_dim-dim+2):(hab_dim-1)))>0){
-  right_edge_ind = ec_indiv[ec_indiv[,1]%in%((hab_dim-dim+2):(hab_dim-1)),]
-  if(is.null(dim(right_edge_ind))){
-    right_edge_ind = c(right_edge_ind,sample(step_moves[c(1,5:8)],1))
-  }else{
-    right_edge_ind = cbind(right_edge_ind,sample(step_moves[c(1,5:8)],
-                                                 dim(right_edge_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,right_edge_ind)
-}
-if(sum(ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==1),c(1,hab_dim-dim+1)))>0){
-  top_edge_ind = ec_indiv[ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==1),
-                                                  c(1,hab_dim-dim+1)),]
-  if(is.null(dim(top_edge_ind))){
-    top_edge_ind = c(top_edge_ind,sample(step_moves[3:7],1))
-  }else{
-    top_edge_ind = cbind(top_edge_ind,sample(step_moves[3:7],
-                                             dim(top_edge_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,top_edge_ind)
-}
-if(sum(ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==0),c(dim,hab_dim)))>0){
-  bottom_edge_ind = ec_indiv[ec_indiv[,1]%in%setdiff(which(1:hab_dim%%dim==0),
-                                                     c(dim,hab_dim)),]
-  if(is.null(dim(bottom_edge_ind))){
-    bottom_edge_ind = c(bottom_edge_ind,sample(step_moves[c(1:3,7:8)],1))
-  }else{
-    bottom_edge_ind = cbind(bottom_edge_ind,sample(step_moves[c(1:3,7:8)],
-                                                   dim(bottom_edge_ind)[1],r=T))
-  }
-  ec_indiv_new = rbind(ec_indiv_new,bottom_edge_ind)
-}
-
-rownames(ec_indiv_new) = NULL
-
-locs_new = rbind(offec_indiv,ec_indiv_new)
-locs_new = locs_new[order(locs_new[,1]),]
-
-# Habitat value of proposed new cell
-locs_new = cbind(locs_new,hab_vals[locs_new[,1]+locs_new[,5]])
-
-#Move probabilistically dependent upon the relative resource values of
-#current and possible new cells
-movers = locs_new[locs_new[,5]!=0,]
-non_movers = locs_new[locs_new[,5]==0,]
-
-move_vals = cbind(movers[,3],movers[,6])
-rel_move_val = move_vals/rowSums(move_vals)
-movers[runif(dim(movers)[1])<=rel_move_val[,1],5] = 0
-
-locs_new = rbind(movers,non_movers)
-locs_new = locs_new[order(locs_new[,1]),]
-
-#Move
-locs_new[,1] = locs_new[,1] + locs_new[,5]
-locs_new[,3] = hab_vals[locs_new[,1]]
-locs_new = locs_new[order(locs_new[,1]),]
-
-#'
-#' ## Die ---------------------------------------------------------------
-#'
-#'  Death occurs as Bernoulli trail with probability logistically dependent on current energy
-mort = as.logical(rbinom(dim(locs)[1],1,a/(1+b*exp(-v*locs[,4]))))
-locs = locs[mort,] #removes individuals from `locs` picked in `mort`
-
-#' ## Reproduce ---------------------------------------------------------
-#' ## Adjust energy -----------------------------------------------------
+#' Randomly place individuals of each species in habitat
 #' 
-#' Loss energy,feed,die
-locs[,4] = locs[,4]-eloss+locs[,3]*100; #loss of energy from one step, gain energy from habitat (feed)
-locs[locs[,4]>100,4] = 100
-#' 
-#' =======================================================================
-#' #4 Simulate
-#' =======================================================================
-#' 
-#' #' Randomly place individuals of each species in habitat, record species ID,..
-#' aggression, and habitat value
-locs = cbind(sample(hab_dim,tot_indiv),rep(1:nspecies,each=nindiv)) # Randomly picks locations (V1-cell) for all individuals (V2) 
-locs = cbind(locs,hab_vals[locs[,1]]) #V3-habitat value
+locs = cbind(sample(hab_dim,tot_indiv),rep(1:nspecies,each=nindiv))       # Randomly picks locations (V1-cell) for all individuals (V2) 
+locs = cbind(locs,hab_vals[locs[,1]])                                     # habitat value
+
 #' add energetic value
-locs = cbind(locs,rep(100,nindiv)) #v4 starting energetic value =100?
-colnames(locs)=c("cell", "species", "hab_val", "energy")
+locs = cbind(locs,rep(100,nindiv))                                        # starting energetic value =100?
+colnames(locs)=c("loc", "sp", "hab_val", "e_val")
 
 #' Place individuals in habitat
-habitat = matrix(0,ncol=dim,nrow=dim) #make 100 x 100 matrix
-habitat[locs[,1]] = 1 # pulls out V1 (uniqe cell number) from locs, and places individual (=1) in the cell
+habitat = matrix(0,ncol=dim,nrow=dim)                                     # make 100 x 100 matrix
+habitat[locs[,1]] = 1                                                     # pulls out uniqe cell number from locs, and places individual (=1) in the cell
 
 #' Sort by location
 locs = locs[order(locs[,1]),]
+
+#'
+#' 
+#'  
+#'   ## 2. Feed, energy gain, energy loss, die (from energy loss)
+#'   
+locs2 <- die(locs=locs)
+
+
+
+
+
+
+
+
+
+
+
 
 
 #' =======================================================================
@@ -311,93 +436,9 @@ locs = locs[order(locs[,1]),]
     
     
     
-    #Interacting species are those occupying the same cell
-    loc_ind = locs_new[,1]
-    int_loc = loc_ind[duplicated(loc_ind)]
     
-    fighters = locs_new[locs_new[,1]%in%int_loc,]
     
-    #Aggression is energetically expensive
-    fighters[,4] = fighters[,4]-fight_eloss
-    
-    #Remove fighters from set of individuals
-    locs_new = locs_new[locs_new[,1]%in%setdiff(locs_new[,1],fighters[,1]),]
-    
-    ###Roulette selection for winners
-    all_winners = NULL
-    
-    for(i in unique(fighters[,1])){
-      sp_in_cell = fighters[fighters[,1]==i,]
-      sp_ids = sp_in_cell[,2]
-      nosp = length(sp_ids)
-      win_vect = rep(0,nosp)
-      #Fights occur in random pairs, with the losers being removed until only one...
-      #individual remains
-      for(j in 1:(nosp-1)){
-        fightj = sp_in_cell[sample(1:dim(sp_in_cell)[1],2),]
-        
-        aggress_vals = c(aggression[fightj[1,2],fightj[2,2]],
-                         aggression[fightj[2,2],fightj[1,2]])
-        
-        energy_levels = c(fightj[1,4],fightj[2,4])
-        
-        status = aggress_vals*energy_levels
-        #Status of individual is product of aggression and energy level. 
-        #Highly aggressive but lower energy individuals can lose to less aggressive...
-        #individuals who have high energy
-        out_prob = cumsum(status^exp_fight)/sum(status^exp_fight)
-        
-        if(out_prob[1]>runif(1)){
-          loser = fightj[2,]
-        }else{
-          loser = fightj[1,]
-        }
-        
-        rowcount = 0
-        rowsum = 0
-        while(rowsum!=6){
-          rowcount = rowcount + 1
-          rowsum = sum(sp_in_cell[rowcount,] == loser)
-        }
-        sp_in_cell = sp_in_cell[-rowcount,]
-      }
-      
-      initial = fighters[fighters[,1]==i,]
-      
-      rowcount = 0
-      rowsum = 0
-      while(rowsum!=6){
-        rowcount = rowcount + 1
-        rowsum = sum(initial[rowcount,] == sp_in_cell)
-      }
-      win_vect[rowcount] = 1
-      all_winners = c(all_winners,win_vect)
-    }
-    
-    fighters = cbind(fighters,all_winners)
-    
-    #Differentiate winners and losers
-    winners = fighters[fighters[,7]==1,]
-    losers = fighters[fighters[,7]==0,]
-    
-    ### Loss energy, consume, die
-    #Losers only loss energy and die
-    losers[,4] = losers[,4]-eloss
-    losers = losers[losers[,4]>0,]
-    mort = as.logical(rbinom(dim(losers)[1],1,a/(1+b*exp(-v*losers[,4]))))
-    losers = losers[mort,]
-    
-    # Combines winner with those who didn't engage in aggression (i.e. were sole occupants of cell)
-    locs_new = cbind(locs_new,all_winners=1)
-    locs_new = rbind(locs_new,winners)
-    locs_new = locs_new[order(locs_new[,1]),]
-    
-    #These individuals lose energy, consume, die and reproduce
-    locs_new[,4] = locs_new[,4]-eloss+locs_new[,3]*100
-    locs_new[locs_new[,4]>100,4] = 100
-    locs_new = locs_new[locs_new[,4]>0,]
-    mort = as.logical(rbinom(dim(locs_new)[1],1,a/(1+b*exp(-v*locs_new[,4]))))
-    locs_new = locs_new[mort,]
+  
     
     #Reproduction is Bernouilli trail dependent on current energy levels. 
     #Low-energy individuals (I sound like Trump!) are unlikely to reproduce.
@@ -454,3 +495,36 @@ rich.plot = ggplot(allRich) + theme_bw() +
 cairo_pdf('aggression.pdf',width=5,height=5.2)
 print(rich.plot)
 dev.off()
+
+
+#'
+#' ## Aggress ------------------------------------------------------------
+
+aggression = matrix(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),ncol=nspecies)
+diag(aggression) = 0.5 # For interaction between individuals of the same species 
+aggression = matrix(ncol=nspecies,nrow=nspecies,
+                    sort(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),d=T))
+}
+
+
+
+# Aggression relationships (transitive or intransitive) ##Gareth working on this? ##
+#' 
+if(reps<=replicates/2){
+  intransitive = T 
+}else{
+  intransitive = F
+}
+
+#' Define aggression values
+if(intransitive){
+  aggression = matrix(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),ncol=nspecies)
+  diag(aggression) = 0.5 # For interaction between individuals of the same species 
+  aggression = matrix(ncol=nspecies,nrow=nspecies,
+                      sort(0.5-diff_ag + runif(nspecies*nspecies)*(diff_ag*2),d=T))
+}
+
+
+
+rich[rich$gen==generation & rich$rep==reps,3]=length(unique(locs[,2])) #updates species richness
+rich[rich$gen==generation & rich$rep==reps,4]=intransitive
